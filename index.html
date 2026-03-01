@@ -354,8 +354,9 @@
     let score = 0;
     let animationFrameId;
     let lastFrameTime = 0;
-    let scoreTimer = 0;
-    let dustTimer = 0;
+    let accumulator = 0;
+    const TICK_MS = 1000 / 60; // 고정 16.67ms (60틱/초)
+    let frameCount = 0;
 
     let dinoY = 0;
     let velocity = 0;
@@ -364,9 +365,8 @@
 
     const GRAVITY = 0.85;
     const JUMP_POWER = 14;
-    let dt = 1; // delta-time 배수 (60fps 기준 1.0)
-    let gameSpeed = 5;    
-    let spawnTimer = 0; 
+    let gameSpeed = 5;
+    let spawnTimer = 0;
     let obstacles = []; 
 
     function resizeGame() {
@@ -398,16 +398,27 @@
     function gameLoop(timestamp) {
         if (!isGameStarted || isGameOver) return;
 
-        // delta-time 계산 (60fps = dt 1.0 기준)
         if (!lastFrameTime) lastFrameTime = timestamp;
-        dt = (timestamp - lastFrameTime) / (1000 / 60);
+        let elapsed = timestamp - lastFrameTime;
         lastFrameTime = timestamp;
-        if (dt > 3) dt = 3; // 탭 전환 시 폭주 방지
+        if (elapsed > 100) elapsed = 100; // 탭 전환 시 폭주 방지 (최대 100ms)
 
-        // 1. 점수 및 배경 관리 (시간 기반)
-        scoreTimer += dt;
-        if (scoreTimer >= 6) {
-            scoreTimer -= 6;
+        accumulator += elapsed;
+
+        // 고정 타임스텝: 정확히 60틱/초로 게임 로직 실행
+        while (accumulator >= TICK_MS) {
+            gameTick();
+            accumulator -= TICK_MS;
+        }
+
+        animationFrameId = requestAnimationFrame(gameLoop);
+    }
+
+    function gameTick() {
+        frameCount++;
+
+        // 1. 점수
+        if (frameCount % 6 === 0) {
             score++;
             scoreElement.innerText = "SCORE: " + score.toString().padStart(4, '0');
             if (score > 0 && score % 100 === 0) gameSpeed += 2.5;
@@ -419,27 +430,26 @@
             }
         }
 
-        // 2. 물리 연산 (dt 적용)
+        // 2. 물리
         if (isJumping) {
-            velocity -= GRAVITY * dt;
-            dinoY += velocity * dt;
+            velocity -= GRAVITY;
+            dinoY += velocity;
             if (dinoY <= 0) {
                 dinoY = 0; isJumping = false; velocity = 0;
                 createDust(100, 0, 5);
             }
         } else {
             dino.style.bottom = "0px";
-            dustTimer += dt;
-            if (dustTimer >= 10) { dustTimer -= 10; createDust(85, 0, 1); }
+            if (frameCount % 10 === 0) createDust(85, 0, 1);
         }
         dino.style.bottom = dinoY + 'px';
 
-        // 3. 배경 스크롤 (dt 적용)
-        bgPosition -= gameSpeed * 0.15 * dt;
+        // 3. 배경 스크롤
+        bgPosition -= gameSpeed * 0.15;
         gameContainer.style.backgroundPositionX = bgPosition + "px";
 
-        // 4. 장애물 생성 (dt 적용)
-        spawnTimer -= dt;
+        // 4. 장애물 생성
+        spawnTimer--;
         if (spawnTimer <= 0) {
             createObstacle();
             let speedFactor = (gameSpeed - 9) * 2.5;
@@ -451,7 +461,6 @@
         }
 
         updateObstacles();
-        animationFrameId = requestAnimationFrame(gameLoop);
     }
 
     // 파티클 생성
@@ -482,7 +491,7 @@
     function updateObstacles() {
         for (let i = obstacles.length - 1; i >= 0; i--) {
             let obs = obstacles[i];
-            obs.x -= gameSpeed * dt;
+            obs.x -= gameSpeed;
             obs.element.style.left = obs.x + 'px';
 
             if (obs.x < -150) {
@@ -524,7 +533,7 @@
     function startGame() {
         isGameStarted = true; isGameOver = false; score = 0;
         gameSpeed = 9; spawnTimer = 0; obstacles = []; bgPosition = 0;
-        lastFrameTime = 0; scoreTimer = 0; dustTimer = 0;
+        lastFrameTime = 0; accumulator = 0; frameCount = 0;
         
         scoreElement.innerText = "SCORE: 0000";
         gameContainer.classList.remove('red-mode');
