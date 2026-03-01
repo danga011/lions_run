@@ -138,6 +138,21 @@
         #gameContainer.red-mode #scoreBoard { color: #ffdd00; text-shadow: 0 0 10px #ffdd00; }
         #gameContainer.hyper-mode #scoreBoard { color: #00ffff; text-shadow: 0 0 15px #00ffff; }
 
+        #liveRanking {
+            position: absolute; top: 15px; left: 15px; z-index: 10;
+            background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 6px; padding: 8px 12px;
+            font-size: 13px; color: #ccc; line-height: 1.6;
+            pointer-events: none; display: none; min-width: 150px;
+        }
+        #liveRanking .lr-title { color: #ffd700; font-size: 12px; margin-bottom: 4px; letter-spacing: 1px; }
+        #liveRanking .lr-row { display: flex; justify-content: space-between; gap: 10px; }
+        #liveRanking .lr-row:nth-child(2) { color: #ffd700; }
+        #liveRanking .lr-row:nth-child(3) { color: #c0c0c0; }
+        #liveRanking .lr-row:nth-child(4) { color: #cd7f32; }
+        #gameContainer.red-mode #liveRanking { border-color: rgba(255,51,51,0.3); }
+        #gameContainer.hyper-mode #liveRanking { border-color: rgba(255,0,255,0.3); }
+
         /* 파티클(먼지) 스타일 */
         .particle {
             position: absolute;
@@ -190,6 +205,7 @@
     <div id="dino"></div>
     <div class="ground-line"></div>
     <div id="scoreBoard">SCORE: 0000</div>
+    <div id="liveRanking"></div>
 
     <div id="gameOverScreen">
         <h1>SYSTEM FAILURE</h1>
@@ -276,6 +292,36 @@
         });
     }
 
+    const liveRankingEl = document.getElementById('liveRanking');
+
+    async function fetchLiveRanking() {
+        if (!supabaseClient || !liveRankingEl) return;
+        try {
+            const { data, error } = await supabaseClient
+                .from('scores')
+                .select('player_name, score')
+                .order('score', { ascending: false })
+                .order('created_at', { ascending: true })
+                .limit(5);
+            if (error) throw error;
+            renderLiveRanking(data);
+        } catch (e) {
+            liveRankingEl.style.display = 'none';
+        }
+    }
+
+    function renderLiveRanking(data) {
+        if (!data || !data.length) { liveRankingEl.style.display = 'none'; return; }
+        let html = '<div class="lr-title">🏆 TOP 5</div>';
+        data.forEach((r, i) => {
+            let parts = r.player_name.split(' ');
+            let shortName = parts.length >= 2 ? parts[1] : r.player_name;
+            html += `<div class="lr-row"><span>${i+1}. ${shortName}</span><span>${r.score}</span></div>`;
+        });
+        liveRankingEl.innerHTML = html;
+        liveRankingEl.style.display = 'block';
+    }
+
     function subscribeRealtime() {
         if (!supabaseClient) return;
         if (realtimeChannel) return; // 이미 구독 중이면 재사용
@@ -283,7 +329,10 @@
             .channel('scores-realtime')
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'scores' }, () => {
                 if (debounceTimer) clearTimeout(debounceTimer);
-                debounceTimer = setTimeout(() => { showRankings(); }, 300);
+                debounceTimer = setTimeout(() => {
+                    fetchLiveRanking();
+                    if (rankingArea.style.display === 'flex') showRankings();
+                }, 300);
             })
             .subscribe();
     }
@@ -489,12 +538,15 @@
 
         dinoY = 0; dino.style.bottom = "0px"; velocity = 0;
         cancelAnimationFrame(animationFrameId);
+        fetchLiveRanking();
+        subscribeRealtime();
         gameLoop();
     }
 
     function gameOver() {
         isGameOver = true;
         cancelAnimationFrame(animationFrameId);
+        if (liveRankingEl) liveRankingEl.style.display = 'none';
         gameOverScreen.style.display = "flex";
         inputArea.style.display = "block";
         rankingArea.style.display = "none";
