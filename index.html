@@ -274,7 +274,7 @@
             rankListElement.innerHTML = "<li style='text-align:center;border:none;color:#aaa;'>기록 없음</li>";
             return;
         }
-        rankings.forEach((rank, index) => {
+        rankings.slice(0, 3).forEach((rank, index) => {
             let li = document.createElement("li");
             li.innerHTML = `<span>${index + 1}. ${rank.name}</span> <span>${rank.score}</span>`;
             rankListElement.appendChild(li);
