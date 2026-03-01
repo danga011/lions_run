@@ -216,8 +216,8 @@
 
 <script>
     // ===== Supabase 설정 블록 (배포 전 반드시 채워 넣으세요) =====
-    const SUPABASE_URL = '';       // 예: 'https://xyzcompany.supabase.co'
-    const SUPABASE_ANON_KEY = '';  // 예: 'eyJhbGciOiJI...'
+    const SUPABASE_URL = 'https://qxmnovxvnflrzqcacvli.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF4bW5vdnh2bmZscnpxY2FjdmxpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIzMjM4OTgsImV4cCI6MjA4Nzg5OTg5OH0.kEflqYvlEZKHXrmGEkWZc8O6hX1hCHoKw9hMTlz804M';
     // ==============================================================
 
     let supabaseClient = null;
@@ -322,8 +322,8 @@
     let isJumping = false;
     let bgPosition = 0; 
     
-    const GRAVITY = 0.7;  
-    const JUMP_POWER = 15; 
+    const GRAVITY = 0.85;
+    const JUMP_POWER = 14;
     let gameSpeed = 5;    
     let spawnTimer = 0; 
     let obstacles = []; 
@@ -363,7 +363,7 @@
         if (frameCount % 6 === 0) {
             score++;
             scoreElement.innerText = "SCORE: " + score.toString().padStart(4, '0');
-            if (score > 0 && score % 100 === 0) gameSpeed += 2; 
+            if (score > 0 && score % 100 === 0) gameSpeed += 2.5;
 
             if (score >= 300 && currentPhase < 1) {
                 currentPhase = 1; changeBackgroundPhase('red-mode');
@@ -394,11 +394,11 @@
         spawnTimer--;
         if (spawnTimer <= 0) {
             createObstacle();
-            let speedFactor = (gameSpeed - 7) * 2; 
-            let minGap = 90 - speedFactor;
-            let maxGap = 180 - speedFactor;
-            if (minGap < 50) minGap = 50;
-            if (maxGap < 90) maxGap = 90;
+            let speedFactor = (gameSpeed - 9) * 2.5;
+            let minGap = 70 - speedFactor;
+            let maxGap = 140 - speedFactor;
+            if (minGap < 35) minGap = 35;
+            if (maxGap < 65) maxGap = 65;
             spawnTimer = Math.floor(Math.random() * (maxGap - minGap + 1) + minGap);
         }
 
@@ -457,7 +457,7 @@
     function createObstacle() {
         const obsElem = document.createElement('div');
         obsElem.classList.add('obstacle');
-        let birdChance = score >= 300 ? 0.6 : 0.4;
+        let birdChance = score >= 300 ? 0.55 : (score >= 100 ? 0.45 : 0.35);
         let type = Math.random() < birdChance ? 'bird' : 'cactus';
         let startX = 1100; 
 
@@ -475,7 +475,7 @@
 
     function startGame() {
         isGameStarted = true; isGameOver = false; score = 0;
-        gameSpeed = 7; spawnTimer = 0; frameCount = 0; obstacles = []; bgPosition = 0;
+        gameSpeed = 9; spawnTimer = 0; frameCount = 0; obstacles = []; bgPosition = 0;
         
         scoreElement.innerText = "SCORE: 0000";
         gameContainer.classList.remove('red-mode');
