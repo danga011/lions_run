@@ -118,6 +118,7 @@
             z-index: 5;
             filter: drop-shadow(0 0 2px #ffffff);
             will-change: transform;
+            transform-origin: bottom center;
         }
 
         .obstacle { position: absolute; left: 0; z-index: 4; will-change: transform; }
@@ -131,6 +132,11 @@
             background: transparent url('fire.png') no-repeat center/contain;
             filter: drop-shadow(0 0 3px #ffffff);
         }
+        .fireball {
+            width: 70px; height: 70px; bottom: 55px;
+            background: transparent url('fire.png') no-repeat center/contain;
+            filter: drop-shadow(0 0 4px #ff6600);
+        }
 
         #scoreBoard { 
             position: absolute; top: 20px; right: 30px; 
@@ -138,6 +144,26 @@
         }
         #gameContainer.red-mode #scoreBoard { color: #ffdd00; text-shadow: 0 0 10px #ffdd00; }
         #gameContainer.hyper-mode #scoreBoard { color: #00ffff; text-shadow: 0 0 15px #00ffff; }
+
+        #perfectIndicator {
+            position: absolute;
+            top: 90px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 40px;
+            color: #ffd700;
+            text-shadow: 0 0 12px #ffd700, 0 0 24px #ff8800;
+            letter-spacing: 4px;
+            opacity: 0;
+            transform-origin: center;
+            transition: opacity 0.15s ease-out, transform 0.15s ease-out;
+            z-index: 11;
+            pointer-events: none;
+        }
+        #perfectIndicator.show {
+            opacity: 1;
+            transform: translate(-50%, -12px) scale(1.1);
+        }
 
         #liveRanking {
             position: absolute; top: 15px; left: 15px; z-index: 10;
@@ -206,6 +232,7 @@
     <div id="dino"></div>
     <div class="ground-line"></div>
     <div id="scoreBoard">SCORE: 0000</div>
+    <div id="perfectIndicator">PERFECT!</div>
     <div id="liveRanking"></div>
 
     <div id="gameOverScreen">
@@ -348,11 +375,13 @@
     const playerPhoneInput = document.getElementById("playerPhone");
     const rankListElement = document.getElementById("rankList");
     const overlay = document.getElementById("transitionOverlay");
+    const perfectIndicator = document.getElementById("perfectIndicator");
     
     let currentPhase = 0; 
     let isGameStarted = false;
     let isGameOver = false;
     let score = 0;
+    let perfectCount = 0;
     let animationFrameId;
     let lastFrameTime = 0;
     let scoreAccum = 0;
@@ -362,6 +391,7 @@
     let dinoY = 0;
     let velocity = 0;
     let isJumping = false;
+    let isDucking = false;
     let bgPosition = 0;
 
     const GRAVITY = 0.85;
@@ -378,8 +408,21 @@
     resizeGame();
 
     document.addEventListener('keydown', function(event) {
-        if (event.code === 'Space') handleInput();
-        else if (event.code === 'ArrowDown' && isGameStarted && !isGameOver && isJumping) velocity = -15;
+        if (event.code === 'Space') {
+            handleInput();
+        } else if (event.code === 'ArrowDown' && isGameStarted && !isGameOver) {
+            if (isJumping) {
+                velocity = -15;
+            } else if (!isDucking) {
+                startDuck();
+            }
+        }
+    });
+
+    document.addEventListener('keyup', function(event) {
+        if (event.code === 'ArrowDown' && isDucking) {
+            endDuck();
+        }
     });
 
     gameContainer.addEventListener('touchstart', function(event) {
@@ -389,9 +432,11 @@
     function handleInput() {
         if (!isGameStarted) startGame();
         else if (!isGameOver && !isJumping) {
+            const isPerfect = checkPerfectTiming();
             isJumping = true;
             velocity = JUMP_POWER;
             createDust(100, 10, 3);
+            if (isPerfect) triggerPerfect();
         }
         else if (isGameOver && rankingArea.style.display === 'flex') goToStart();
     }
@@ -440,7 +485,9 @@
         } else {
             if (frameCount % 20 === 0) createDust(85, 0, 1);
         }
-        dino.style.transform = 'translateY(-' + dinoY + 'px)';
+        const scaleX = isDucking ? 1.25 : 1;
+        const scaleY = isDucking ? 0.55 : 1;
+        dino.style.transform = 'translateY(-' + dinoY + 'px) scale(' + scaleX + ',' + scaleY + ')';
 
         // 3. 배경 스크롤
         bgPosition -= gameSpeed * 0.15 * dt;
@@ -459,6 +506,57 @@
         }
 
         updateObstacles(dt);
+    }
+
+    function startDuck() {
+        isDucking = true;
+    }
+
+    function endDuck() {
+        isDucking = false;
+    }
+
+    function checkPerfectTiming() {
+        // 장애물이 공룡 바로 앞에서(충돌 구간 직전) 점프해야 퍼펙트 판정
+        // 충돌 체크 x 구간이 130~50이므로, 그보다 살짝 앞인 200~170 정도만 허용 (꽤 빡셈)
+        for (let i = 0; i < obstacles.length; i++) {
+            const obs = obstacles[i];
+            if (obs.usedPerfect) continue;
+            if (obs.x <= 200 && obs.x >= 170) {
+                obs.usedPerfect = true;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function triggerPerfect() {
+        perfectCount++;
+        score += 10; // 퍼펙트 보너스 점수
+        scoreElement.innerText = "SCORE: " + score.toString().padStart(4, '0');
+
+        if (!perfectIndicator) return;
+        perfectIndicator.classList.remove('show');
+        // 살짝 딜레이 후 다시 붙여서 트랜지션 재생
+        setTimeout(() => {
+            perfectIndicator.classList.add('show');
+        }, 10);
+
+        // 모드별로 색상 살짝 변화
+        if (currentPhase === 1) {
+            perfectIndicator.style.color = '#ffdd00';
+            perfectIndicator.style.textShadow = '0 0 12px #ffdd00, 0 0 24px #ff5500';
+        } else if (currentPhase === 2) {
+            perfectIndicator.style.color = '#00ffff';
+            perfectIndicator.style.textShadow = '0 0 14px #00ffff, 0 0 28px #0066ff';
+        } else {
+            perfectIndicator.style.color = '#ffd700';
+            perfectIndicator.style.textShadow = '0 0 12px #ffd700, 0 0 24px #ff8800';
+        }
+
+        setTimeout(() => {
+            perfectIndicator.classList.remove('show');
+        }, 450);
     }
 
     // 파티클 생성
@@ -502,6 +600,10 @@
                 let dinoBottom = dinoY;
                 if (obs.type === 'bird') {
                     if (dinoBottom > 50) gameOver();
+                } else if (obs.type === 'fireball') {
+                    // 중간 높이 파이어볼: 아래키로 로고를 찌그러트리면 회피 가능
+                    // 너무 높게 점프(>80)하면 위로 넘어가서 회피, 그 외에는 피격
+                    if (!isDucking && dinoBottom >= 20 && dinoBottom <= 80) gameOver();
                 } else {
                     if (dinoBottom < 50) gameOver();
                 }
@@ -512,15 +614,28 @@
     function createObstacle() {
         const obsElem = document.createElement('div');
         obsElem.classList.add('obstacle');
-        let birdChance = score >= 300 ? 0.55 : (score >= 100 ? 0.45 : 0.35);
-        let type = Math.random() < birdChance ? 'bird' : 'cactus';
+
+        // 항상 세 종류가 섞여 나오도록 단순화
+        // 낮은 점수에서도 바로 중간 파이어볼을 경험할 수 있게 함
+        let type;
+        const r = Math.random();
+        if (r < 0.4) type = 'cactus';          // 40%
+        else if (r < 0.7) type = 'fireball';   // 30%
+        else type = 'bird';                    // 30%
+
         let startX = 1100;
 
-        obsElem.classList.add(type === 'bird' ? 'bird' : 'cactus');
+        if (type === 'bird') {
+            obsElem.classList.add('bird');
+        } else if (type === 'fireball') {
+            obsElem.classList.add('fireball');
+        } else {
+            obsElem.classList.add('cactus');
+        }
         obsElem.style.transform = 'translateX(' + startX + 'px)';
 
         gameContainer.appendChild(obsElem);
-        obstacles.push({ element: obsElem, x: startX, type: type });
+        obstacles.push({ element: obsElem, x: startX, type: type, usedPerfect: false });
     }
 
     function startGame() {
@@ -538,7 +653,8 @@
         document.querySelectorAll('.obstacle').forEach(e => e.remove());
         document.querySelectorAll('.particle').forEach(e => e.remove());
 
-        dinoY = 0; dino.style.transform = 'translateY(0)'; velocity = 0;
+        dinoY = 0; velocity = 0; isJumping = false; isDucking = false;
+        dino.style.transform = 'translateY(0) scale(1,1)';
         cancelAnimationFrame(animationFrameId);
         fetchLiveRanking();
         subscribeRealtime();
