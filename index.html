@@ -1,0 +1,629 @@
+<!--
+  ============================================================
+  HANYANG LIONS RUN — Supabase 리더보드 연동 가이드
+  ============================================================
+
+  [1] Supabase URL / ANON KEY 설정
+      → 아래 <script> 블록에서 SUPABASE_URL, SUPABASE_ANON_KEY 상수를 찾아
+        본인의 Supabase 프로젝트 값으로 채워 넣으세요.
+        비워 두면 자동으로 localStorage 전용 모드(오프라인)로 동작합니다.
+
+  [2] Supabase SQL 실행
+      → 이 파일 맨 하단 주석 블록(SUPABASE SCHEMA SQL)을 복사해
+        Supabase Dashboard > SQL Editor에서 실행하세요.
+
+  [3] 정적 호스팅 배포 시 주의
+      - 반드시 HTTPS로 서빙 (Supabase SDK가 https 필수)
+      - Supabase 대시보드 > Auth > URL Configuration에 배포 도메인 등록
+      - CORS 이슈 발생 시 Supabase 대시보드 > API > CORS Origins 확인
+  ============================================================
+-->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>HANYANG LIONS RUN</title>
+    <style>
+        @font-face {
+            font-family: 'Mulmaru';
+            src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/2601-4@1.1/Mulmaru.woff2') format('woff2');
+            font-weight: normal;
+            font-style: normal;
+        }
+
+        body { 
+            margin: 0; padding: 0; 
+            display: flex; justify-content: center; align-items: center; 
+            height: 100vh; 
+            background-color: #111; 
+            font-family: 'Mulmaru', 'Menlo', 'Monaco', 'Consolas', monospace; 
+            color: #fff;
+            overflow: hidden; 
+            touch-action: none; 
+        }
+
+        #gameContainer { 
+            position: relative; 
+            width: 1000px; 
+            height: 550px; 
+            background-image: url('bg.png'); 
+            background-size: cover;    
+            background-position: 0px 0px; 
+            background-repeat: repeat-x; 
+            border: 4px solid #004094; 
+            box-shadow: 0 0 30px rgba(0, 64, 148, 0.7); 
+            overflow: hidden; 
+            transform-origin: center;
+            transition: border-color 1s ease, box-shadow 1s ease;
+        }
+
+        /* 페이즈별 스타일 */
+        #gameContainer.red-mode {
+            background-image: url('bg_red.png'); 
+            border-color: #ff3333;      
+            box-shadow: 0 0 40px rgba(255, 51, 51, 0.6); 
+        }
+        #gameContainer.hyper-mode {
+            background-image: url('bg_hyper.png'); 
+            border-color: #ff00ff;     
+            box-shadow: 0 0 60px rgba(255, 0, 255, 0.9); 
+        }
+
+        /* UI 요소 */
+        #startScreen, #gameOverScreen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 1); 
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 20; 
+        }
+        #gameOverScreen { background-color: rgba(0, 0, 0, 0.9); display: none; }
+
+        #transitionOverlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: #000; opacity: 0; z-index: 1; pointer-events: none;   
+            transition: opacity 0.8s ease; 
+        }
+        
+        /* 텍스트 스타일 */
+        .main-title {
+            font-size: 80px; font-weight: normal; color: #fff;
+            text-shadow: 0 0 15px #004094, 0 0 30px #004094;
+            margin-bottom: 20px; letter-spacing: 5px; line-height: 1.1; text-align: center;
+        }
+        .sub-title { font-size: 24px; color: #aaa; margin-bottom: 60px; letter-spacing: 3px; }
+        .blink-text { animation: blink 1.5s infinite; color: #0f0; margin-bottom: 30px; font-size: 20px; }
+        @keyframes blink { 50% { opacity: 0; } }
+
+        .start-btn, .action-btn {
+            padding: 15px 40px; font-size: 20px; 
+            background: #004094; color: #fff; border: 2px solid #fff;
+            cursor: pointer; transition: 0.2s; font-family: inherit; 
+            box-shadow: 0 0 15px #004094;
+        }
+        .start-btn:hover, .action-btn:hover { background: #fff; color: #004094; }
+
+        /* 게임 오브젝트 */
+        .ground-line {
+            position: absolute; bottom: 0; width: 100%; height: 2px; 
+            background-color: #004094; transition: 2s;
+        }
+        #gameContainer.red-mode .ground-line { background-color: #ff3333; }
+        #gameContainer.hyper-mode .ground-line { background-color: #ff00ff; box-shadow: 0 0 15px #ff00ff; }
+
+        #dino { 
+            width: 60px; height: 60px; 
+            background: transparent url('logo.png') no-repeat center/cover;
+            position: absolute; bottom: 0; left: 80px; 
+            z-index: 5;
+            filter: drop-shadow(0 0 2px #ffffff);
+        }
+
+        .obstacle { position: absolute; z-index: 4; }
+        .cactus { 
+            width: 80px; height: 70px; bottom: 0; 
+            background: transparent url('stone.png') no-repeat center/contain;
+            filter: drop-shadow(0 0 3px #ffffff);
+        }
+        .bird { 
+            width: 90px; height: 60px; bottom: 110px;
+            background: transparent url('fire.png') no-repeat center/contain;
+            filter: drop-shadow(0 0 3px #ffffff);
+        }
+
+        #scoreBoard { 
+            position: absolute; top: 20px; right: 30px; 
+            font-size: 30px; color: #0f0; text-shadow: 0 0 5px #0f0; z-index: 10;
+        }
+        #gameContainer.red-mode #scoreBoard { color: #ffdd00; text-shadow: 0 0 10px #ffdd00; }
+        #gameContainer.hyper-mode #scoreBoard { color: #00ffff; text-shadow: 0 0 15px #00ffff; }
+
+        /* 파티클(먼지) 스타일 */
+        .particle {
+            position: absolute;
+            background-color: #fff;
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            z-index: 3;
+            pointer-events: none;
+            opacity: 0.8;
+            transition: transform 0.5s ease-out, opacity 0.5s ease-out;
+        }
+        
+        /* 랭킹 스타일 */
+        h1 { margin: 0 0 10px 0; color: #ff3333; font-size: 60px; text-shadow: 0 0 20px #ff3333; letter-spacing: 5px; }
+        input {
+            padding: 12px; font-size: 18px; background: #222; border: 2px solid #004094;
+            color: #fff; text-align: center; outline: none; font-family: inherit;
+        }
+        .input-row { display: flex; gap: 8px; justify-content: center; margin-bottom: 20px; flex-wrap: wrap; }
+        .input-row input { width: auto; }
+        #rankList { list-style: none; padding: 0; width: 600px; margin: 0; font-size: 20px; }
+        #rankList li { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px dashed #555; color: #ccc; }
+        #rankList li:nth-child(1) { color: #ffd700; text-shadow: 0 0 10px #ffd700; font-size: 24px;}
+        #rankList li:nth-child(2) { color: #c0c0c0; text-shadow: 0 0 8px #c0c0c0; font-size: 22px; }
+        #rankList li:nth-child(3) { color: #cd7f32; text-shadow: 0 0 8px #cd7f32; font-size: 22px; }
+
+        #rankStatus {
+            font-size: 14px; color: #888; margin-top: 12px; min-height: 20px;
+            letter-spacing: 1px;
+        }
+        #rankStatus.online { color: #0f0; }
+        #rankStatus.error  { color: #ff5555; }
+        #rankStatus.nokey  { color: #ffaa00; }
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<div id="gameContainer">
+    <div id="transitionOverlay"></div>
+    
+    <div id="startScreen">
+        <div class="main-title">HANYANG<br>LIONS RUN</div>
+        <div class="sub-title">: COLLEGE OF COMPUTING</div>
+        <div class="blink-text">- SPACE to Start -</div>
+        <button class="start-btn" onclick="startGame()">GAME START</button>
+    </div>
+
+    <div id="dino"></div>
+    <div class="ground-line"></div>
+    <div id="scoreBoard">SCORE: 0000</div>
+
+    <div id="gameOverScreen">
+        <h1>SYSTEM FAILURE</h1>
+        <p style="color:#aaa; font-size: 20px; margin-bottom: 30px;">RUNTIME ERROR DETECTED</p>
+        
+        <div id="inputArea" style="text-align:center;">
+            <p style="font-size: 20px;">FINAL SCORE: <span id="finalScore" style="color:#0f0">0</span></p>
+            <div class="input-row">
+                <input type="text" id="playerDept" placeholder="계열" maxlength="6" style="width:110px;">
+                <input type="text" id="playerRealName" placeholder="이름" maxlength="5" style="width:90px;">
+                <input type="text" id="playerPhone" placeholder="뒷자리(4자)" maxlength="4" style="width:110px;" inputmode="numeric">
+            </div>
+            <button class="action-btn" onclick="saveScore()">기록 저장</button>
+        </div>
+
+        <div id="rankingArea" style="display:none; width: 100%; flex-direction: column; align-items: center;">
+            <h2 style="color:#004094; border-bottom:2px solid #fff; padding-bottom: 10px; font-size: 30px;">🏆 명예의 전당</h2>
+            <ul id="rankList"></ul>
+            <div id="rankStatus"></div>
+            <button class="action-btn" onclick="goToStart()">처음으로</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ===== Supabase 설정 블록 (배포 전 반드시 채워 넣으세요) =====
+    const SUPABASE_URL = '';       // 예: 'https://xyzcompany.supabase.co'
+    const SUPABASE_ANON_KEY = '';  // 예: 'eyJhbGciOiJI...'
+    // ==============================================================
+
+    let supabaseClient = null;
+    let realtimeChannel = null;
+    let lastSubmitTime = 0;
+    let debounceTimer = null;
+
+    if (SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase) {
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    }
+
+    const rankStatusEl = document.getElementById('rankStatus');
+
+    function setRankStatus(mode) {
+        if (!rankStatusEl) return;
+        rankStatusEl.className = '';
+        if (mode === 'online') {
+            rankStatusEl.textContent = '실시간 랭킹 연결됨';
+            rankStatusEl.classList.add('online');
+        } else if (mode === 'error') {
+            rankStatusEl.textContent = '네트워크 오류 — 로컬 랭킹 표시중';
+            rankStatusEl.classList.add('error');
+        } else if (mode === 'nokey') {
+            rankStatusEl.textContent = 'Supabase 키 미설정 — 로컬 랭킹 표시중';
+            rankStatusEl.classList.add('nokey');
+        } else if (mode === 'loading') {
+            rankStatusEl.textContent = '불러오는 중…';
+            rankStatusEl.className = '';
+        } else {
+            rankStatusEl.textContent = '';
+        }
+    }
+
+    function getLocalRankings() {
+        return JSON.parse(localStorage.getItem('soyungRunRanking')) || [];
+    }
+
+    function saveToLocalStorage(name, sc) {
+        let rankings = getLocalRankings();
+        rankings.push({ name: name, score: sc });
+        rankings.sort((a, b) => b.score - a.score);
+        rankings = rankings.slice(0, 10);
+        localStorage.setItem('soyungRunRanking', JSON.stringify(rankings));
+    }
+
+    function renderRankList(rankings) {
+        rankListElement.innerHTML = "";
+        if (!rankings.length) {
+            rankListElement.innerHTML = "<li style='text-align:center;border:none;color:#aaa;'>기록 없음</li>";
+            return;
+        }
+        rankings.forEach((rank, index) => {
+            let li = document.createElement("li");
+            li.innerHTML = `<span>${index + 1}. ${rank.name}</span> <span>${rank.score}</span>`;
+            rankListElement.appendChild(li);
+        });
+    }
+
+    function subscribeRealtime() {
+        if (!supabaseClient) return;
+        if (realtimeChannel) return; // 이미 구독 중이면 재사용
+        realtimeChannel = supabaseClient
+            .channel('scores-realtime')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'scores' }, () => {
+                if (debounceTimer) clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => { showRankings(); }, 300);
+            })
+            .subscribe();
+    }
+
+    function unsubscribeRealtime() {
+        if (realtimeChannel) {
+            supabaseClient.removeChannel(realtimeChannel);
+            realtimeChannel = null;
+        }
+        if (debounceTimer) { clearTimeout(debounceTimer); debounceTimer = null; }
+    }
+
+    const dino = document.getElementById("dino");
+    const gameContainer = document.getElementById("gameContainer");
+    const scoreElement = document.getElementById("scoreBoard");
+    const startScreen = document.getElementById("startScreen");
+    const gameOverScreen = document.getElementById("gameOverScreen");
+    const inputArea = document.getElementById("inputArea");
+    const rankingArea = document.getElementById("rankingArea");
+    const finalScoreSpan = document.getElementById("finalScore");
+    const playerDeptInput = document.getElementById("playerDept");
+    const playerRealNameInput = document.getElementById("playerRealName");
+    const playerPhoneInput = document.getElementById("playerPhone");
+    const rankListElement = document.getElementById("rankList");
+    const overlay = document.getElementById("transitionOverlay");
+    
+    let currentPhase = 0; 
+    let isGameStarted = false;
+    let isGameOver = false;
+    let score = 0;
+    let animationFrameId; 
+    let frameCount = 0;
+
+    let dinoY = 0;        
+    let velocity = 0;     
+    let isJumping = false;
+    let bgPosition = 0; 
+    
+    const GRAVITY = 0.7;  
+    const JUMP_POWER = 15; 
+    let gameSpeed = 5;    
+    let spawnTimer = 0; 
+    let obstacles = []; 
+
+    function resizeGame() {
+        let scale = Math.min(window.innerWidth / 1250, window.innerHeight / 550, 1);
+        gameContainer.style.transform = `scale(${scale})`;
+    }
+    window.addEventListener('resize', resizeGame);
+    resizeGame();
+
+    document.addEventListener('keydown', function(event) {
+        if (event.code === 'Space') handleInput();
+        else if (event.code === 'ArrowDown' && isGameStarted && !isGameOver && isJumping) velocity = -15;
+    });
+
+    gameContainer.addEventListener('touchstart', function(event) {
+        event.preventDefault(); handleInput();
+    }, {passive: false});
+
+    function handleInput() {
+        if (!isGameStarted) startGame();
+        else if (!isGameOver && !isJumping) { 
+            isJumping = true; 
+            velocity = JUMP_POWER; 
+            createDust(100, 10, 5); 
+        }
+        else if (isGameOver && rankingArea.style.display === 'flex') goToStart();
+    }
+
+    function gameLoop() {
+        if (!isGameStarted || isGameOver) return;
+
+        frameCount++;
+        
+        // 1. 점수 및 배경 관리
+        if (frameCount % 6 === 0) {
+            score++;
+            scoreElement.innerText = "SCORE: " + score.toString().padStart(4, '0');
+            if (score > 0 && score % 100 === 0) gameSpeed += 2; 
+
+            if (score >= 300 && currentPhase < 1) {
+                currentPhase = 1; changeBackgroundPhase('red-mode');
+            } else if (score >= 600 && currentPhase < 2) {
+                currentPhase = 2; changeBackgroundPhase('hyper-mode');
+            }
+        }
+
+        // 2. 물리 연산
+        if (isJumping) {
+            velocity -= GRAVITY;
+            dinoY += velocity;
+            if (dinoY <= 0) {
+                dinoY = 0; isJumping = false; velocity = 0;
+                createDust(100, 0, 5); 
+            }
+        } else {
+            dino.style.bottom = "0px";
+            if (frameCount % 10 === 0) createDust(85, 0, 1);
+        }
+        dino.style.bottom = dinoY + 'px';
+
+        // 3. 배경 스크롤
+        bgPosition -= gameSpeed * 0.15; 
+        gameContainer.style.backgroundPositionX = bgPosition + "px";
+
+        // 4. 장애물 생성
+        spawnTimer--;
+        if (spawnTimer <= 0) {
+            createObstacle();
+            let speedFactor = (gameSpeed - 7) * 2; 
+            let minGap = 90 - speedFactor;
+            let maxGap = 180 - speedFactor;
+            if (minGap < 50) minGap = 50;
+            if (maxGap < 90) maxGap = 90;
+            spawnTimer = Math.floor(Math.random() * (maxGap - minGap + 1) + minGap);
+        }
+
+        updateObstacles();
+        animationFrameId = requestAnimationFrame(gameLoop);
+    }
+
+    // 파티클 생성
+    function createDust(x, y, count) {
+        for(let i=0; i<count; i++) {
+            const dust = document.createElement('div');
+            dust.classList.add('particle');
+            
+            dust.style.left = (x + Math.random() * 20) + 'px';
+            dust.style.bottom = (y + Math.random() * 10) + 'px';
+            
+            if(currentPhase === 1) dust.style.backgroundColor = '#ffcc00'; 
+            else if(currentPhase === 2) dust.style.backgroundColor = '#00ffff';
+
+            gameContainer.appendChild(dust);
+
+            setTimeout(() => {
+                let moveX = (Math.random() - 0.5) * 50 - 30; 
+                let moveY = Math.random() * 30;              
+                dust.style.transform = `translate(${moveX}px, -${moveY}px) scale(0)`;
+                dust.style.opacity = '0';
+            }, 10);
+
+            setTimeout(() => { dust.remove(); }, 500);
+        }
+    }
+
+    function updateObstacles() {
+        for (let i = obstacles.length - 1; i >= 0; i--) {
+            let obs = obstacles[i];
+            obs.x -= gameSpeed;
+            obs.element.style.left = obs.x + 'px';
+
+            if (obs.x < -150) {
+                obs.element.remove();
+                obstacles.splice(i, 1);
+                continue;
+            }
+
+            if (obs.x < 130 && obs.x > 50) { 
+                let dinoBottom = dinoY;
+                if (obs.type === 'bird') {
+                    if (dinoBottom > 50) gameOver(); 
+                } else {
+                    if (dinoBottom < 50) gameOver();
+                }
+            }
+        }
+    }
+
+    function createObstacle() {
+        const obsElem = document.createElement('div');
+        obsElem.classList.add('obstacle');
+        let birdChance = score >= 300 ? 0.6 : 0.4;
+        let type = Math.random() < birdChance ? 'bird' : 'cactus';
+        let startX = 1100; 
+
+        if (type === 'bird') {
+            obsElem.classList.add('bird');
+            obsElem.style.left = startX + 'px';
+        } else {
+            obsElem.classList.add('cactus');
+            obsElem.style.left = startX + 'px';
+        }
+
+        gameContainer.appendChild(obsElem);
+        obstacles.push({ element: obsElem, x: startX, type: type });
+    }
+
+    function startGame() {
+        isGameStarted = true; isGameOver = false; score = 0;
+        gameSpeed = 7; spawnTimer = 0; frameCount = 0; obstacles = []; bgPosition = 0;
+        
+        scoreElement.innerText = "SCORE: 0000";
+        gameContainer.classList.remove('red-mode');
+        gameContainer.classList.remove('hyper-mode');
+        overlay.style.opacity = 0; currentPhase = 0;
+        
+        startScreen.style.display = "none";
+        gameOverScreen.style.display = "none";
+        document.querySelectorAll('.obstacle').forEach(e => e.remove());
+        document.querySelectorAll('.particle').forEach(e => e.remove());
+
+        dinoY = 0; dino.style.bottom = "0px"; velocity = 0;
+        cancelAnimationFrame(animationFrameId);
+        gameLoop();
+    }
+
+    function gameOver() {
+        isGameOver = true;
+        cancelAnimationFrame(animationFrameId);
+        gameOverScreen.style.display = "flex";
+        inputArea.style.display = "block";
+        rankingArea.style.display = "none";
+        finalScoreSpan.innerText = score;
+        playerDeptInput.value = "";
+        playerRealNameInput.value = "";
+        playerPhoneInput.value = "";
+        playerDeptInput.focus();
+    }
+
+    function goToStart() {
+        isGameStarted = false; isGameOver = false;
+        gameContainer.classList.remove('red-mode');
+        gameContainer.classList.remove('hyper-mode');
+        document.querySelectorAll('.obstacle').forEach(e => e.remove());
+        gameOverScreen.style.display = "none";
+        startScreen.style.display = "flex";
+        unsubscribeRealtime();
+    }
+
+    async function saveScore() {
+        // Rate limit: 3초 이내 중복 제출 방지
+        const now = Date.now();
+        if (now - lastSubmitTime < 3000) return;
+        lastSubmitTime = now;
+
+        let dept = playerDeptInput.value.trim();
+        let realName = playerRealNameInput.value.trim();
+        let phone = playerPhoneInput.value.trim();
+
+        if (!dept || !realName || !phone) return; // 세 필드 모두 필수
+        if (!/^\d{4}$/.test(phone)) { playerPhoneInput.focus(); return; } // 숫자 4자리만
+
+        let name = `${dept} ${realName} ${phone}`;
+
+        if (supabaseClient) {
+            try {
+                const { error } = await supabaseClient
+                    .from('scores')
+                    .insert({ player_name: name, score: score });
+                if (error) throw error;
+                saveToLocalStorage(name, score); // 로컬에도 백업
+                showRankings();
+            } catch (e) {
+                saveToLocalStorage(name, score);
+                showRankings(true); // 오프라인 모드
+            }
+        } else {
+            saveToLocalStorage(name, score);
+            showRankings(true);
+        }
+    }
+
+    async function showRankings(offlineMode) {
+        inputArea.style.display = "none";
+        rankingArea.style.display = "flex";
+        setRankStatus('loading');
+
+        if (supabaseClient && !offlineMode) {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('scores')
+                    .select('player_name, score')
+                    .order('score', { ascending: false })
+                    .order('created_at', { ascending: true })
+                    .limit(10);
+                if (error) throw error;
+                renderRankList(data.map(r => ({ name: r.player_name, score: r.score })));
+                setRankStatus('online');
+                subscribeRealtime();
+            } catch (e) {
+                renderRankList(getLocalRankings());
+                setRankStatus('error');
+            }
+        } else {
+            renderRankList(getLocalRankings());
+            setRankStatus(supabaseClient ? 'error' : 'nokey');
+        }
+    }
+    
+    function changeBackgroundPhase(newModeClass) {
+        overlay.style.opacity = 1;
+        setTimeout(() => {
+            gameContainer.classList.remove('red-mode'); 
+            gameContainer.classList.remove('hyper-mode');
+            gameContainer.classList.add(newModeClass);
+            overlay.style.opacity = 0;
+        }, 800); 
+    }
+</script>
+
+<!--
+  ============================================================
+  SUPABASE SCHEMA SQL
+  아래 SQL을 Supabase Dashboard > SQL Editor에 붙여넣고 실행하세요.
+  ============================================================
+
+  -- 1) 테이블 생성
+  CREATE TABLE public.scores (
+      id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      player_name text NOT NULL,
+      score      bigint NOT NULL CHECK (score >= 0),
+      created_at timestamptz DEFAULT now()
+  );
+
+  -- 2) 성능 인덱스 (Top N 조회 최적화)
+  CREATE INDEX idx_scores_rank ON public.scores (score DESC, created_at ASC);
+
+  -- 3) Row Level Security 활성화
+  ALTER TABLE public.scores ENABLE ROW LEVEL SECURITY;
+
+  -- 4) SELECT 정책: 누구나 읽기 가능
+  CREATE POLICY "Public read access"
+      ON public.scores FOR SELECT
+      USING (true);
+
+  -- 5) INSERT 정책: 누구나(anon) 삽입 가능
+  CREATE POLICY "Public insert access"
+      ON public.scores FOR INSERT
+      WITH CHECK (true);
+
+  -- UPDATE / DELETE 정책 없음 → 자동 차단
+
+  -- 6) Realtime 활성화 (Supabase Dashboard > Database > Replication에서
+  --    scores 테이블의 Realtime 토글을 켜거나, 아래 SQL 실행)
+  ALTER PUBLICATION supabase_realtime ADD TABLE public.scores;
+
+  ============================================================
+-->
+
+</body>
+</html>
