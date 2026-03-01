@@ -268,7 +268,8 @@
     }
 
     function getLocalRankings() {
-        return JSON.parse(localStorage.getItem('soyungRunRanking')) || [];
+        let data = JSON.parse(localStorage.getItem('soyungRunRanking')) || [];
+        return data.slice(0, 3);
     }
 
     function saveToLocalStorage(name, sc) {
