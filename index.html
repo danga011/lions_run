@@ -601,9 +601,11 @@
                 if (obs.type === 'bird') {
                     if (dinoBottom > 50) gameOver();
                 } else if (obs.type === 'fireball') {
-                    // 중간 높이 파이어볼: 아래키로 로고를 찌그러트리면 회피 가능
-                    // 너무 높게 점프(>80)하면 위로 넘어가서 회피, 그 외에는 피격
-                    if (!isDucking && dinoBottom >= 20 && dinoBottom <= 80) gameOver();
+                    // 중간 높이 파이어볼:
+                    // - 아래키로 숙이면(duck) 아래로 파고들어 회피
+                    // - 아주 높게 점프(dinoBottom > 80)하면 위로 넘어가며 회피
+                    // 그 외(바닥에 그냥 서 있거나, 낮게 점프)는 전부 피격
+                    if (!isDucking && dinoBottom <= 80) gameOver();
                 } else {
                     if (dinoBottom < 50) gameOver();
                 }
