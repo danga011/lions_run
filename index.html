@@ -111,15 +111,16 @@
         #gameContainer.red-mode .ground-line { background-color: #ff3333; }
         #gameContainer.hyper-mode .ground-line { background-color: #ff00ff; box-shadow: 0 0 15px #ff00ff; }
 
-        #dino { 
-            width: 60px; height: 60px; 
+        #dino {
+            width: 60px; height: 60px;
             background: transparent url('logo.png') no-repeat center/cover;
-            position: absolute; bottom: 0; left: 80px; 
+            position: absolute; bottom: 0; left: 80px;
             z-index: 5;
             filter: drop-shadow(0 0 2px #ffffff);
+            will-change: transform;
         }
 
-        .obstacle { position: absolute; z-index: 4; }
+        .obstacle { position: absolute; left: 0; z-index: 4; will-change: transform; }
         .cactus { 
             width: 80px; height: 70px; bottom: 0; 
             background: transparent url('stone.png') no-repeat center/contain;
@@ -162,7 +163,7 @@
             z-index: 3;
             pointer-events: none;
             opacity: 0.8;
-            transition: transform 0.5s ease-out, opacity 0.5s ease-out;
+            transition: transform 0.35s ease-out, opacity 0.35s ease-out;
         }
         
         /* 랭킹 스타일 */
@@ -354,8 +355,8 @@
     let score = 0;
     let animationFrameId;
     let lastFrameTime = 0;
-    let accumulator = 0;
-    const TICK_MS = 1000 / 60; // 고정 16.67ms (60틱/초)
+    let scoreAccum = 0;
+    const SCORE_MS = 100; // 100ms당 1점
     let frameCount = 0;
 
     let dinoY = 0;
@@ -387,10 +388,10 @@
 
     function handleInput() {
         if (!isGameStarted) startGame();
-        else if (!isGameOver && !isJumping) { 
-            isJumping = true; 
-            velocity = JUMP_POWER; 
-            createDust(100, 10, 5); 
+        else if (!isGameOver && !isJumping) {
+            isJumping = true;
+            velocity = JUMP_POWER;
+            createDust(100, 10, 3);
         }
         else if (isGameOver && rankingArea.style.display === 'flex') goToStart();
     }
@@ -401,55 +402,52 @@
         if (!lastFrameTime) lastFrameTime = timestamp;
         let elapsed = timestamp - lastFrameTime;
         lastFrameTime = timestamp;
-        if (elapsed > 100) elapsed = 100; // 탭 전환 시 폭주 방지 (최대 100ms)
+        if (elapsed > 50) elapsed = 50; // 탭 전환 시 폭주 방지
 
-        accumulator += elapsed;
+        // dt: 60fps 기준 1.0 (30fps→2.0, 120fps→0.5)
+        let dt = elapsed / 16.667;
 
-        // 고정 타임스텝: 정확히 60틱/초로 게임 로직 실행
-        while (accumulator >= TICK_MS) {
-            gameTick();
-            accumulator -= TICK_MS;
-        }
+        gameTick(dt, elapsed);
 
         animationFrameId = requestAnimationFrame(gameLoop);
     }
 
-    function gameTick() {
+    function gameTick(dt, elapsedMs) {
         frameCount++;
 
-        // 1. 점수
-        if (frameCount % 6 === 0) {
+        // 1. 점수 (시간 기반: 100ms당 1점 — 모든 기기 동일)
+        scoreAccum += elapsedMs;
+        while (scoreAccum >= SCORE_MS) {
+            scoreAccum -= SCORE_MS;
             score++;
-            scoreElement.innerText = "SCORE: " + score.toString().padStart(4, '0');
             if (score > 0 && score % 100 === 0) gameSpeed += 2.5;
-
             if (score >= 300 && currentPhase < 1) {
                 currentPhase = 1; changeBackgroundPhase('red-mode');
             } else if (score >= 600 && currentPhase < 2) {
                 currentPhase = 2; changeBackgroundPhase('hyper-mode');
             }
         }
+        scoreElement.innerText = "SCORE: " + score.toString().padStart(4, '0');
 
-        // 2. 물리
+        // 2. 물리 (dt 기반 — GPU transform 사용)
         if (isJumping) {
-            velocity -= GRAVITY;
-            dinoY += velocity;
+            velocity -= GRAVITY * dt;
+            dinoY += velocity * dt;
             if (dinoY <= 0) {
                 dinoY = 0; isJumping = false; velocity = 0;
-                createDust(100, 0, 5);
+                createDust(100, 0, 3);
             }
         } else {
-            dino.style.bottom = "0px";
-            if (frameCount % 10 === 0) createDust(85, 0, 1);
+            if (frameCount % 20 === 0) createDust(85, 0, 1);
         }
-        dino.style.bottom = dinoY + 'px';
+        dino.style.transform = 'translateY(-' + dinoY + 'px)';
 
         // 3. 배경 스크롤
-        bgPosition -= gameSpeed * 0.15;
-        gameContainer.style.backgroundPositionX = bgPosition + "px";
+        bgPosition -= gameSpeed * 0.15 * dt;
+        gameContainer.style.backgroundPositionX = bgPosition + 'px';
 
         // 4. 장애물 생성
-        spawnTimer--;
+        spawnTimer -= dt;
         if (spawnTimer <= 0) {
             createObstacle();
             let speedFactor = (gameSpeed - 9) * 2.5;
@@ -457,10 +455,10 @@
             let maxGap = 140 - speedFactor;
             if (minGap < 35) minGap = 35;
             if (maxGap < 65) maxGap = 65;
-            spawnTimer = Math.floor(Math.random() * (maxGap - minGap + 1) + minGap);
+            spawnTimer = Math.random() * (maxGap - minGap) + minGap;
         }
 
-        updateObstacles();
+        updateObstacles(dt);
     }
 
     // 파티클 생성
@@ -488,11 +486,11 @@
         }
     }
 
-    function updateObstacles() {
+    function updateObstacles(dt) {
         for (let i = obstacles.length - 1; i >= 0; i--) {
             let obs = obstacles[i];
-            obs.x -= gameSpeed;
-            obs.element.style.left = obs.x + 'px';
+            obs.x -= gameSpeed * dt;
+            obs.element.style.transform = 'translateX(' + obs.x + 'px)';
 
             if (obs.x < -150) {
                 obs.element.remove();
@@ -500,10 +498,10 @@
                 continue;
             }
 
-            if (obs.x < 130 && obs.x > 50) { 
+            if (obs.x < 130 && obs.x > 50) {
                 let dinoBottom = dinoY;
                 if (obs.type === 'bird') {
-                    if (dinoBottom > 50) gameOver(); 
+                    if (dinoBottom > 50) gameOver();
                 } else {
                     if (dinoBottom < 50) gameOver();
                 }
@@ -516,15 +514,10 @@
         obsElem.classList.add('obstacle');
         let birdChance = score >= 300 ? 0.55 : (score >= 100 ? 0.45 : 0.35);
         let type = Math.random() < birdChance ? 'bird' : 'cactus';
-        let startX = 1100; 
+        let startX = 1100;
 
-        if (type === 'bird') {
-            obsElem.classList.add('bird');
-            obsElem.style.left = startX + 'px';
-        } else {
-            obsElem.classList.add('cactus');
-            obsElem.style.left = startX + 'px';
-        }
+        obsElem.classList.add(type === 'bird' ? 'bird' : 'cactus');
+        obsElem.style.transform = 'translateX(' + startX + 'px)';
 
         gameContainer.appendChild(obsElem);
         obstacles.push({ element: obsElem, x: startX, type: type });
@@ -533,7 +526,7 @@
     function startGame() {
         isGameStarted = true; isGameOver = false; score = 0;
         gameSpeed = 9; spawnTimer = 0; obstacles = []; bgPosition = 0;
-        lastFrameTime = 0; accumulator = 0; frameCount = 0;
+        lastFrameTime = 0; scoreAccum = 0; frameCount = 0;
         
         scoreElement.innerText = "SCORE: 0000";
         gameContainer.classList.remove('red-mode');
@@ -545,7 +538,7 @@
         document.querySelectorAll('.obstacle').forEach(e => e.remove());
         document.querySelectorAll('.particle').forEach(e => e.remove());
 
-        dinoY = 0; dino.style.bottom = "0px"; velocity = 0;
+        dinoY = 0; dino.style.transform = 'translateY(0)'; velocity = 0;
         cancelAnimationFrame(animationFrameId);
         fetchLiveRanking();
         subscribeRealtime();
