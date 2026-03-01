@@ -267,18 +267,6 @@
         }
     }
 
-    function getLocalRankings() {
-        let data = JSON.parse(localStorage.getItem('soyungRunRanking')) || [];
-        return data.slice(0, 3);
-    }
-
-    function saveToLocalStorage(name, sc) {
-        let rankings = getLocalRankings();
-        rankings.push({ name: name, score: sc });
-        rankings.sort((a, b) => b.score - a.score);
-        rankings = rankings.slice(0, 3);
-        localStorage.setItem('soyungRunRanking', JSON.stringify(rankings));
-    }
 
     function renderRankList(rankings) {
         rankListElement.innerHTML = "";
@@ -594,48 +582,41 @@
 
         let name = `${dept} ${realName} ${phone}`;
 
-        if (supabaseClient) {
-            try {
-                const { error } = await supabaseClient
-                    .from('scores')
-                    .insert({ player_name: name, score: score });
-                if (error) throw error;
-                saveToLocalStorage(name, score); // 로컬에도 백업
-                showRankings();
-            } catch (e) {
-                saveToLocalStorage(name, score);
-                showRankings(true); // 오프라인 모드
-            }
-        } else {
-            saveToLocalStorage(name, score);
+        if (!supabaseClient) { setRankStatus('nokey'); return; }
+
+        try {
+            const { error } = await supabaseClient
+                .from('scores')
+                .insert({ player_name: name, score: score });
+            if (error) throw error;
+            showRankings();
+        } catch (e) {
             showRankings(true);
         }
     }
 
-    async function showRankings(offlineMode) {
+    async function showRankings(failed) {
         inputArea.style.display = "none";
         rankingArea.style.display = "flex";
         setRankStatus('loading');
 
-        if (supabaseClient && !offlineMode) {
-            try {
-                const { data, error } = await supabaseClient
-                    .from('scores')
-                    .select('player_name, score')
-                    .order('score', { ascending: false })
-                    .order('created_at', { ascending: true })
-                    .limit(3);
-                if (error) throw error;
-                renderRankList(data.map(r => ({ name: r.player_name, score: r.score })));
-                setRankStatus('online');
-                subscribeRealtime();
-            } catch (e) {
-                renderRankList(getLocalRankings());
-                setRankStatus('error');
-            }
-        } else {
-            renderRankList(getLocalRankings());
-            setRankStatus(supabaseClient ? 'error' : 'nokey');
+        if (!supabaseClient) { renderRankList([]); setRankStatus('nokey'); return; }
+        if (failed) { renderRankList([]); setRankStatus('error'); return; }
+
+        try {
+            const { data, error } = await supabaseClient
+                .from('scores')
+                .select('player_name, score')
+                .order('score', { ascending: false })
+                .order('created_at', { ascending: true })
+                .limit(3);
+            if (error) throw error;
+            renderRankList(data.map(r => ({ name: r.player_name, score: r.score })));
+            setRankStatus('online');
+            subscribeRealtime();
+        } catch (e) {
+            renderRankList([]);
+            setRankStatus('error');
         }
     }
     
