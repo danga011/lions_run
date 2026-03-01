@@ -275,7 +275,7 @@
         let rankings = getLocalRankings();
         rankings.push({ name: name, score: sc });
         rankings.sort((a, b) => b.score - a.score);
-        rankings = rankings.slice(0, 10);
+        rankings = rankings.slice(0, 3);
         localStorage.setItem('soyungRunRanking', JSON.stringify(rankings));
     }
 
@@ -363,16 +363,19 @@
     let isGameStarted = false;
     let isGameOver = false;
     let score = 0;
-    let animationFrameId; 
-    let frameCount = 0;
+    let animationFrameId;
+    let lastFrameTime = 0;
+    let scoreTimer = 0;
+    let dustTimer = 0;
 
-    let dinoY = 0;        
-    let velocity = 0;     
+    let dinoY = 0;
+    let velocity = 0;
     let isJumping = false;
-    let bgPosition = 0; 
-    
+    let bgPosition = 0;
+
     const GRAVITY = 0.85;
     const JUMP_POWER = 14;
+    let dt = 1; // delta-time 배수 (60fps 기준 1.0)
     let gameSpeed = 5;    
     let spawnTimer = 0; 
     let obstacles = []; 
@@ -403,13 +406,19 @@
         else if (isGameOver && rankingArea.style.display === 'flex') goToStart();
     }
 
-    function gameLoop() {
+    function gameLoop(timestamp) {
         if (!isGameStarted || isGameOver) return;
 
-        frameCount++;
-        
-        // 1. 점수 및 배경 관리
-        if (frameCount % 6 === 0) {
+        // delta-time 계산 (60fps = dt 1.0 기준)
+        if (!lastFrameTime) lastFrameTime = timestamp;
+        dt = (timestamp - lastFrameTime) / (1000 / 60);
+        lastFrameTime = timestamp;
+        if (dt > 3) dt = 3; // 탭 전환 시 폭주 방지
+
+        // 1. 점수 및 배경 관리 (시간 기반)
+        scoreTimer += dt;
+        if (scoreTimer >= 6) {
+            scoreTimer -= 6;
             score++;
             scoreElement.innerText = "SCORE: " + score.toString().padStart(4, '0');
             if (score > 0 && score % 100 === 0) gameSpeed += 2.5;
@@ -421,26 +430,27 @@
             }
         }
 
-        // 2. 물리 연산
+        // 2. 물리 연산 (dt 적용)
         if (isJumping) {
-            velocity -= GRAVITY;
-            dinoY += velocity;
+            velocity -= GRAVITY * dt;
+            dinoY += velocity * dt;
             if (dinoY <= 0) {
                 dinoY = 0; isJumping = false; velocity = 0;
-                createDust(100, 0, 5); 
+                createDust(100, 0, 5);
             }
         } else {
             dino.style.bottom = "0px";
-            if (frameCount % 10 === 0) createDust(85, 0, 1);
+            dustTimer += dt;
+            if (dustTimer >= 10) { dustTimer -= 10; createDust(85, 0, 1); }
         }
         dino.style.bottom = dinoY + 'px';
 
-        // 3. 배경 스크롤
-        bgPosition -= gameSpeed * 0.15; 
+        // 3. 배경 스크롤 (dt 적용)
+        bgPosition -= gameSpeed * 0.15 * dt;
         gameContainer.style.backgroundPositionX = bgPosition + "px";
 
-        // 4. 장애물 생성
-        spawnTimer--;
+        // 4. 장애물 생성 (dt 적용)
+        spawnTimer -= dt;
         if (spawnTimer <= 0) {
             createObstacle();
             let speedFactor = (gameSpeed - 9) * 2.5;
@@ -483,7 +493,7 @@
     function updateObstacles() {
         for (let i = obstacles.length - 1; i >= 0; i--) {
             let obs = obstacles[i];
-            obs.x -= gameSpeed;
+            obs.x -= gameSpeed * dt;
             obs.element.style.left = obs.x + 'px';
 
             if (obs.x < -150) {
@@ -524,7 +534,8 @@
 
     function startGame() {
         isGameStarted = true; isGameOver = false; score = 0;
-        gameSpeed = 9; spawnTimer = 0; frameCount = 0; obstacles = []; bgPosition = 0;
+        gameSpeed = 9; spawnTimer = 0; obstacles = []; bgPosition = 0;
+        lastFrameTime = 0; scoreTimer = 0; dustTimer = 0;
         
         scoreElement.innerText = "SCORE: 0000";
         gameContainer.classList.remove('red-mode');
@@ -540,7 +551,7 @@
         cancelAnimationFrame(animationFrameId);
         fetchLiveRanking();
         subscribeRealtime();
-        gameLoop();
+        animationFrameId = requestAnimationFrame(gameLoop);
     }
 
     function gameOver() {
@@ -612,7 +623,7 @@
                     .select('player_name, score')
                     .order('score', { ascending: false })
                     .order('created_at', { ascending: true })
-                    .limit(10);
+                    .limit(3);
                 if (error) throw error;
                 renderRankList(data.map(r => ({ name: r.player_name, score: r.score })));
                 setRankStatus('online');
